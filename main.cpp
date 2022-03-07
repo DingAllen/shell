@@ -7,7 +7,7 @@ int main() {
     LPVOID pImageBuffer = nullptr;
     TCHAR shellFileName[MAX_PATH];
     GetModuleFileName(NULL, shellFileName, MAX_PATH);
-    PPEFile shell = new PEFile(shellFileName);
+    auto shell = new PEFile(shellFileName);
 
     WORD numberOfSections = shell->pPEHeader->NumberOfSections;
     if (strcmp(reinterpret_cast<const char *>(shell->pSectionHeaders[numberOfSections - 1].Name), ".dshell") != 0) {
@@ -16,26 +16,23 @@ int main() {
         return 0;
     }
 
-    DWORD sizeOfImage = shell->pOptionHeader->SizeOfImage;
-    DWORD sizeOfHeaders = shell->pOptionHeader->SizeOfHeaders;
-
-    // 申请ImageBuffer所需的内存空间
-    pImageBuffer = malloc(shell->pOptionHeader->SizeOfImage);
-
-    // 把文件的头部读到ImageBuffer中
-    memcpy(pImageBuffer, shell->pFileBuffer, sizeOfHeaders);
-
-    // 将ImageBuffer还没有用到的部分全部初始化为0
-    memset(((BYTE *) pImageBuffer) + sizeOfHeaders, 0,
-           sizeOfImage - sizeOfHeaders);
-
-    // 开始处理节，将节表中各个节的内容拷到ImageBuffer中
-    for (int i = 0; i < numberOfSections; i++) {
-        memcpy((LPVOID) ((DWORD) pImageBuffer + (DWORD) shell->pSectionHeaders[i].VirtualAddress),
-               (LPVOID) ((DWORD) shell->pFileBuffer + (DWORD) shell->pSectionHeaders[i].PointerToRawData),
-               shell->pSectionHeaders[i].SizeOfRawData);
+    DWORD sizeOfFile = shell->pSectionHeaders[numberOfSections - 1].Misc.VirtualSize;
+    LPVOID pEncryptedBuffer = malloc(sizeOfFile);
+    memcpy_s(pEncryptedBuffer, sizeOfFile,
+             reinterpret_cast<const void *const>(shell->pSectionHeaders[numberOfSections - 1].PointerToRawData),
+             sizeOfFile);
+    for (DWORD i = 0; i < sizeOfFile; i++) {
+        *((PBYTE)pEncryptedBuffer + i) ^= PASSWORD;
     }
+    delete shell;
 
+    auto src = new PEFile(pEncryptedBuffer, sizeOfFile);
+    pImageBuffer = src->GetImageBuffer();
+
+
+
+    delete src;
+    free(pImageBuffer);
 
     return 0;
 }
