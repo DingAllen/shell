@@ -57,6 +57,8 @@ int main() {
     if (strcmp(reinterpret_cast<const char *>(shell->pSectionHeaders[numberOfSections - 1].Name), ".dshell") != 0) {
         PRINTLNF("当前程序是壳源，请不要直接打开，请使用加壳工具加壳后使用。");
         system("pause");
+        delete shell;
+        free(pImageBuffer);
         return 0;
     }
 
@@ -68,9 +70,7 @@ int main() {
     for (DWORD i = 0; i < sizeOfFile; i++) {
         *((PBYTE) pEncryptedBuffer + i) ^= PASSWORD;
     }
-
     auto src = new PEFile(pEncryptedBuffer, sizeOfFile);
-    pImageBuffer = src->GetImageBuffer();
 
     STARTUPINFO si = {0};
     PROCESS_INFORMATION pi;
@@ -102,7 +102,7 @@ int main() {
 
     DWORD shellImageBase = 0;
 
-    ReadProcessMemory(pi.hProcess, baseAddress, &shellImageBase, 4, NULL);
+    ReadProcessMemory(pi.hProcess, baseAddress, &shellImageBase, 4, nullptr);
 
 
     UnloadShell(pi.hProcess, shellImageBase);
@@ -110,14 +110,34 @@ int main() {
     LPVOID p = AllocShellZone(pi.hProcess, shell, src);
     if (p == nullptr) {
         PRINTLNF("在壳中分配新的内存空间失败！");
-        CloseHandle(pi.hProcess);
+        TerminateProcess(pi.hProcess, -1);
         system("pause");
+        delete shell;
+        delete src;
+        free(pImageBuffer);
         return 0;
     }
+
+    WriteProcessMemory(pi.hProcess, baseAddress, &p, 4, nullptr);
+
+    if (!WriteProcessMemory(pi.hProcess, p, src->GetImageBuffer(), src->pOptionHeader->SizeOfImage, nullptr)) {
+
+        PRINTLNF("往壳空间中塞入源程序失败！");
+        TerminateProcess(pi.hProcess, -1);
+        system("pause");
+        delete shell;
+        delete src;
+        free(pImageBuffer);
+        return 0;
+    }
+    contx.Eax = (DWORD) p + src->pOptionHeader->AddressOfEntryPoint;
+    SetThreadContext(pi.hThread, &contx);
+    ResumeThread(pi.hThread);
 
     delete shell;
     delete src;
     free(pImageBuffer);
+    CloseHandle(pi.hThread);
 
     return 0;
 }
