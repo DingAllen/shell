@@ -65,11 +65,12 @@ int main() {
     DWORD sizeOfFile = shell->pSectionHeaders[numberOfSections - 1].Misc.VirtualSize;
     LPVOID pEncryptedBuffer = malloc(sizeOfFile);
     memcpy_s(pEncryptedBuffer, sizeOfFile,
-             reinterpret_cast<const void *const>(shell->pSectionHeaders[numberOfSections - 1].PointerToRawData),
+             (LPVOID) ((DWORD) shell->pFileBuffer +
+                       shell->pSectionHeaders[numberOfSections - 1].PointerToRawData),
              sizeOfFile);
-    for (DWORD i = 0; i < sizeOfFile; i++) {
-        *((PBYTE) pEncryptedBuffer + i) ^= PASSWORD;
-    }
+//    for (DWORD i = 0; i < sizeOfFile; i++) {
+//        *((PBYTE) pEncryptedBuffer + i) ^= PASSWORD;
+//    }
     auto src = new PEFile(pEncryptedBuffer, sizeOfFile);
 
     STARTUPINFO si = {0};
@@ -94,9 +95,6 @@ int main() {
     contx.ContextFlags = CONTEXT_FULL;
     GetThreadContext(pi.hThread, &contx);
 
-    // 获取入口点
-    DWORD dwEntryPoint = contx.Eax;
-
     // 获取ImageBase
     char *baseAddress = (CHAR *) contx.Ebx + 8;
 
@@ -104,14 +102,13 @@ int main() {
 
     ReadProcessMemory(pi.hProcess, baseAddress, &shellImageBase, 4, nullptr);
 
-
     UnloadShell(pi.hProcess, shellImageBase);
 
     LPVOID p = AllocShellZone(pi.hProcess, shell, src);
     if (p == nullptr) {
         PRINTLNF("在壳中分配新的内存空间失败！");
-        TerminateProcess(pi.hProcess, -1);
         system("pause");
+        TerminateProcess(pi.hProcess, -1);
         delete shell;
         delete src;
         free(pImageBuffer);
@@ -123,8 +120,8 @@ int main() {
     if (!WriteProcessMemory(pi.hProcess, p, src->GetImageBuffer(), src->pOptionHeader->SizeOfImage, nullptr)) {
 
         PRINTLNF("往壳空间中塞入源程序失败！");
-        TerminateProcess(pi.hProcess, -1);
         system("pause");
+        TerminateProcess(pi.hProcess, -1);
         delete shell;
         delete src;
         free(pImageBuffer);
